@@ -5,6 +5,7 @@ import express from 'express';
 
 import { config } from './config';
 
+const fs = require('fs');
 const app = express();
 const router = express.Router();
 
