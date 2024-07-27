@@ -10,12 +10,12 @@ import {
   NtfyNotifier,
   PushoverNotifier,
   HomeassistantNotifier,
-} from './notifiers';
+  WebhookNotifier,
+} from './notifiers/index.js';
 import {
   config,
   DiscordConfig,
   EmailConfig,
-  LocalConfig,
   NotificationType,
   TelegramConfig,
   AppriseConfig,
@@ -25,16 +25,17 @@ import {
   NtfyConfig,
   HomeassistantConfig,
   BarkConfig,
-} from './common/config';
-import L from './common/logger';
-import { NotificationReason } from './interfaces/notification-reason';
+  WebhookConfig,
+} from './common/config/index.js';
+import L from './common/logger.js';
+import { NotificationReason } from './interfaces/notification-reason.js';
 // eslint-disable-next-line import/no-cycle
-import { DeviceLogin } from './device-login';
+import { DeviceLogin } from './device-login.js';
 
 export async function sendNotification(
   accountEmail: string,
   reason: NotificationReason,
-  url?: string
+  url?: string,
 ): Promise<void> {
   const account = config.accounts.find((acct) => acct.email === accountEmail);
   const notifierConfigs = account?.notifiers || config.notifiers;
@@ -45,7 +46,7 @@ export async function sendNotification(
         accountEmail,
         reason,
       },
-      `No notifiers configured globally, or for the account. This log is all you'll get`
+      `No notifiers configured globally, or for the account. This log is all you'll get`,
     );
     return;
   }
@@ -58,7 +59,7 @@ export async function sendNotification(
       case NotificationType.EMAIL:
         return new EmailNotifier(notifierConfig as EmailConfig);
       case NotificationType.LOCAL:
-        return new LocalNotifier(notifierConfig as LocalConfig);
+        return new LocalNotifier();
       case NotificationType.TELEGRAM:
         return new TelegramNotifier(notifierConfig as TelegramConfig);
       case NotificationType.APPRISE:
@@ -73,13 +74,15 @@ export async function sendNotification(
         return new BarkNotifier(notifierConfig as BarkConfig);
       case NotificationType.NTFY:
         return new NtfyNotifier(notifierConfig as NtfyConfig);
+      case NotificationType.WEBHOOK:
+        return new WebhookNotifier(notifierConfig as WebhookConfig);
       default:
         throw new Error(`Unexpected notifier config: ${notifierConfig.type}`);
     }
   });
 
   await Promise.all(
-    notifiers.map((notifier) => notifier.sendNotification(accountEmail, reason, url))
+    notifiers.map((notifier) => notifier.sendNotification(accountEmail, reason, url)),
   );
 }
 
@@ -91,7 +94,7 @@ export async function testNotifiers(): Promise<void> {
       config.accounts.map((acct) => {
         const deviceAuth = new DeviceLogin({ user: acct.email });
         return deviceAuth.testServerNotify();
-      })
+      }),
     );
     L.info('Notification test complete');
   } catch (err) {

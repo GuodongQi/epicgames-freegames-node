@@ -1,16 +1,23 @@
 import axios from 'axios';
-import { config } from './common/config';
-import L from './common/logger';
+import { readFileSync } from 'node:fs';
+import { config } from './common/config/index.js';
+import L from './common/logger.js';
 
 const PROJECT_NAME = 'epicgames-freegames-node';
-const { COMMIT_SHA, BRANCH, DISTRO } = process.env;
+const { BRANCH, DISTRO } = process.env;
+let { COMMIT_SHA } = process.env;
+try {
+  COMMIT_SHA = readFileSync('./commit-sha.txt', { encoding: 'utf-8' }).trim();
+} catch (error) {
+  L.debug('Fallback to environment variable commit SHA');
+}
 
 export async function checkForUpdate(): Promise<void> {
   L.info({ COMMIT_SHA, BRANCH, DISTRO }, `Started ${PROJECT_NAME}`);
   if (!(COMMIT_SHA && BRANCH) || config.skipVersionCheck) {
     L.debug(
       { COMMIT_SHA, BRANCH, skipVersionCheck: config.skipVersionCheck },
-      'Skipping version check'
+      'Skipping version check',
     );
     return;
   }
@@ -21,13 +28,13 @@ export async function checkForUpdate(): Promise<void> {
       `https://api.github.com/repos/claabs/${PROJECT_NAME}/commits/${BRANCH}`,
       {
         responseType: 'json',
-      }
+      },
     );
     const latestSha = resp.data.sha;
     L.trace({ latestSha }, 'Response from GitHub API');
     if (COMMIT_SHA !== latestSha) {
       L.warn(
-        `A newer version of ${PROJECT_NAME} is available! \`docker pull\` this image to update.`
+        `A newer version of ${PROJECT_NAME} is available! \`docker pull\` this image to update.`,
       );
     }
   } catch (err) {
@@ -35,6 +42,10 @@ export async function checkForUpdate(): Promise<void> {
     L.debug(err);
   }
 }
+
+export const getCommitSha = () => {
+  return COMMIT_SHA;
+};
 
 export function logVersionOnError(): void {
   if (COMMIT_SHA || BRANCH || DISTRO) {

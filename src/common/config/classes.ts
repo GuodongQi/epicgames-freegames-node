@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-empty-function, no-useless-constructor, max-classes-per-file */
+/* eslint-disable @typescript-eslint/no-empty-function, @typescript-eslint/no-useless-constructor, max-classes-per-file */
 import 'reflect-metadata';
-import { ClassConstructor, Type } from 'class-transformer';
+import { ClassConstructor, Expose, Type } from 'class-transformer';
 import {
   IsEmail,
   IsUrl,
@@ -21,6 +21,10 @@ import {
 } from 'class-validator';
 import { ServerOptions } from 'https';
 import { ListenOptions } from 'net';
+import cronParser from 'cron-parser';
+import path from 'path';
+
+export const CONFIG_DIR = process.env.CONFIG_DIR || 'config';
 
 export enum NotificationType {
   EMAIL = 'email',
@@ -34,6 +38,7 @@ export enum NotificationType {
   HOMEASSISTANT = 'homeassistant',
   BARK = 'bark',
   NTFY = 'ntfy',
+  WEBHOOK = 'webhook',
 }
 
 /**
@@ -430,6 +435,15 @@ export class HomeassistantConfig extends NotifierConfig {
   notifyservice: string;
 
   /**
+   * A key-value pair object to additionally pass into the service's `data` object
+   * @example { "parse_mode": "html" }
+   * @env HOMEASSISTANT_CUSTOM_DATA (stringified JSON)
+   */
+  @IsObject()
+  @IsOptional()
+  customData: Record<string, boolean | number | string> | undefined;
+
+  /**
    * @ignore
    */
   constructor() {
@@ -484,6 +498,34 @@ export class BarkConfig extends NotifierConfig {
   }
 }
 
+/**
+ * Sends a POST request with the notification contents in the body to a [webhook](https://en.wikipedia.org/wiki/Webhook) URL
+ */
+export class WebhookConfig extends NotifierConfig {
+  /**
+   * Webhook URL
+   * @env WEBHOOK_URL
+   */
+  @IsUrl({ require_tld: false })
+  url: string;
+
+  /**
+   * A key-value pair object to pass into the POST request headers
+   * @example { Authorization: "Bearer ABCD" }
+   * @env WEBHOOK_HEADERS (stringified JSON)
+   */
+  @IsObject()
+  @IsOptional()
+  headers: Record<string, string> | undefined;
+
+  /**
+   * @ignore
+   */
+  constructor() {
+    super(NotificationType.WEBHOOK);
+  }
+}
+
 export type AnyNotifierConfig =
   | EmailConfig
   | DiscordConfig
@@ -495,7 +537,8 @@ export type AnyNotifierConfig =
   | SlackConfig
   | HomeassistantConfig
   | BarkConfig
-  | NtfyConfig;
+  | NtfyConfig
+  | WebhookConfig;
 
 const notifierSubtypes: {
   value: ClassConstructor<NotifierConfig>;
@@ -512,6 +555,7 @@ const notifierSubtypes: {
   { value: HomeassistantConfig, name: NotificationType.HOMEASSISTANT },
   { value: BarkConfig, name: NotificationType.BARK },
   { value: NtfyConfig, name: NotificationType.NTFY },
+  { value: WebhookConfig, name: NotificationType.WEBHOOK },
 ];
 
 export class WebPortalConfig {
@@ -682,6 +726,12 @@ export class AppConfig {
   @IsString()
   cronSchedule = process.env.CRON_SCHEDULE || '0 0,6,12,18 * * *';
 
+  @Expose({ toClassOnly: true })
+  getMsUntilNextRun() {
+    const cronExpression = cronParser.parseExpression(this.cronSchedule);
+    return cronExpression.next().getTime() - new Date().getTime();
+  }
+
   /**
    * A list of excluded game titles to skip during processing.
    * @example ['Gigabash Demo', 'Another Blacklisted Game']
@@ -800,21 +850,6 @@ export class AppConfig {
   notifiers?: AnyNotifierConfig[];
 
   /**
-   * Number of hours to wait for a response for a notification.
-   * The notification wait is blocking, so while other accounts will still continue, the process won't exit until all login requests are solved.
-   * If the timeout is reached, the process will exit, and the URL in the notification will be inaccessible.
-   * @example 168
-   * @default 24
-   * @env NOTIFICATION_TIMEOUT_HOURS
-   */
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  notificationTimeoutHours = process.env.NOTIFICATION_TIMEOUT_HOURS
-    ? parseInt(process.env.NOTIFICATION_TIMEOUT_HOURS, 10)
-    : 24;
-
-  /**
    * When true, the process will send test notifications with a test redirect to example.com for all configured accounts.
    * **Be sure to disable this after a successful test.**
    * This test will block normal operation until the test link is accessed by one account. The test page can only be used once.
@@ -925,6 +960,16 @@ export class AppConfig {
   deviceAuthPollRateSeconds = process.env.DEVICE_AUTH_POLL_RATE_SECONDS
     ? parseInt(process.env.DEVICE_AUTH_POLL_RATE_SECONDS, 10)
     : 10;
+
+  /**
+   * The full path where the browser automation error screenshots will be output
+   * @example /errors
+   * @default ${CONFIG_DIR}/errors
+   * @env ERRORS_DIR
+   */
+  @IsOptional()
+  @IsString()
+  errorsDir = process.env.ERRORS_DIR || path.join(CONFIG_DIR, 'errors');
 
   /**
    * @hidden
@@ -1083,6 +1128,7 @@ export class AppConfig {
       HOMEASSISTANT_INSTANCE,
       HOMEASSISTANT_LONG_LIVED_ACCESS_TOKEN,
       HOMEASSISTANT_NOTIFYSERVICE,
+      HOMEASSISTANT_CUSTOM_DATA,
     } = process.env;
     if (
       HOMEASSISTANT_INSTANCE &&
@@ -1093,6 +1139,9 @@ export class AppConfig {
       homeassistant.instance = HOMEASSISTANT_INSTANCE;
       homeassistant.token = HOMEASSISTANT_LONG_LIVED_ACCESS_TOKEN;
       homeassistant.notifyservice = HOMEASSISTANT_NOTIFYSERVICE;
+      homeassistant.customData = HOMEASSISTANT_CUSTOM_DATA
+        ? JSON.parse(HOMEASSISTANT_CUSTOM_DATA)
+        : undefined;
       if (!this.notifiers) {
         this.notifiers = [];
       }
@@ -1114,6 +1163,20 @@ export class AppConfig {
       }
       if (!this.notifiers.some((notifConfig) => notifConfig instanceof BarkConfig)) {
         this.notifiers.push(bark);
+      }
+    }
+
+    // Use environment variables to fill webhook notification config if present
+    const { WEBHOOK_URL, WEBHOOK_HEADERS } = process.env;
+    if (WEBHOOK_URL) {
+      const webhook = new WebhookConfig();
+      webhook.url = WEBHOOK_URL;
+      webhook.headers = WEBHOOK_HEADERS ? JSON.parse(WEBHOOK_HEADERS) : undefined;
+      if (!this.notifiers) {
+        this.notifiers = [];
+      }
+      if (!this.notifiers.some((notifConfig) => notifConfig instanceof WebhookConfig)) {
+        this.notifiers.push(webhook);
       }
     }
 

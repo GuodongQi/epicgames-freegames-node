@@ -3,7 +3,7 @@ import http from 'http';
 import { once } from 'events';
 import express from 'express';
 
-import { config } from './config';
+import { config } from './config/index.js';
 
 const fs = require('fs');
 const app = express();

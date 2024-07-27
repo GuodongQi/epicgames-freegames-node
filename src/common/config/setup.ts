@@ -5,9 +5,9 @@ import path from 'path';
 import fs from 'fs-extra';
 import { validateSync } from 'class-validator';
 import { plainToInstance, instanceToPlain } from 'class-transformer';
-import pino from 'pino';
+import { pino } from 'pino';
 import cronParser from 'cron-parser';
-import { AppConfig } from './classes';
+import { AppConfig, CONFIG_DIR } from './classes.js';
 
 // Declare pino logger as importing would cause dependency cycle
 const L = pino({
@@ -37,7 +37,6 @@ const removeFileExtension = (filename: string): string => {
   return path.basename(filename);
 };
 
-export const CONFIG_DIR = process.env.CONFIG_DIR || 'config';
 export const CONFIG_FILE_NAME = process.env.CONFIG_FILE_NAME
   ? removeFileExtension(process.env.CONFIG_FILE_NAME)
   : 'config';
@@ -85,7 +84,7 @@ const intervalMinimumMs = 7 * 60 * 60 * 1000; // 7 hours
 if (cronIntervalMs > intervalMinimumMs) {
   L.warn(
     { yourCronSchedule: cronSchedule, everySixCronSchedule: '0 0,6,12,18 * * *' },
-    'Your cronSchedule configuration is not set to run often enough to ensure the device auth refresh token can stay valid. This can result in device auth login prompts being sent on every run. It is recommended to set the cron schedule to run every 6 hours.'
+    'Your cronSchedule configuration is not set to run often enough to ensure the device auth refresh token can stay valid. This can result in device auth login prompts being sent on every run. It is recommended to set the cron schedule to run every 6 hours.',
   );
 }
 

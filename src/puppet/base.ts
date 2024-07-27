@@ -1,16 +1,18 @@
 import { Logger } from 'pino';
 import { Protocol, Page, Browser } from 'puppeteer';
 import path from 'path';
-import logger from '../common/logger';
+import { ensureDir } from 'fs-extra/esm';
+import logger from '../common/logger.js';
 import {
   getDevtoolsUrl,
   safeLaunchBrowser,
   safeNewPage,
   toughCookieFileStoreToPuppeteerCookie,
-} from '../common/puppeteer';
-import { getCookiesRaw, setPuppeteerCookies, userHasValidCookie } from '../common/cookie';
-import { CONFIG_DIR } from '../common/config';
-import { getAccountAuth } from '../common/device-auths';
+} from '../common/puppeteer.js';
+import { getCookiesRaw, setPuppeteerCookies, userHasValidCookie } from '../common/cookie.js';
+import { config } from '../common/config/index.js';
+import { getAccountAuth } from '../common/device-auths.js';
+import { STORE_HOMEPAGE } from '../common/constants.js';
 
 export interface PuppetBaseProps {
   browser: Browser;
@@ -71,6 +73,7 @@ export default class PuppetBase {
       });
       await cdpClient.detach();
       await page.setCookie(...puppeteerCookies);
+      await page.goto(STORE_HOMEPAGE, { waitUntil: 'networkidle2' });
       return page;
     } catch (err) {
       await this.handlePageError(err, page);
@@ -96,12 +99,13 @@ export default class PuppetBase {
   protected async handlePageError(err: unknown, page?: Page) {
     if (page) {
       const errorFile = `error-${new Date().toISOString()}.png`;
+      await ensureDir(config.errorsDir);
       await page.screenshot({
-        path: path.join(CONFIG_DIR, errorFile),
+        path: path.join(config.errorsDir, errorFile),
       });
       this.L.error(
         { errorFile },
-        'Encountered an error during browser automation. Saved a screenshot for debugging purposes.'
+        'Encountered an error during browser automation. Saved a screenshot for debugging purposes.',
       );
       await page.close();
     }
