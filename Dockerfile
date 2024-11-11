@@ -1,9 +1,8 @@
 ########
 # BASE
 ########
-FROM node:18-alpine3.19 as base
+FROM node:18-alpine3.20 AS base
 
-ENV DISTRO=alpine
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=1
 
 WORKDIR /usr/app
@@ -11,14 +10,14 @@ WORKDIR /usr/app
 ########
 # DEPS
 ########
-FROM base as deps
+FROM base AS deps
 
 # Go to https://hub.docker.com/_/node/ and note the latest stable Alpine version available (e.g. alpine3.19).
-# Go to https://pkgs.alpinelinux.org/package/v3.19/community/x86_64/chromium (replace with the latest Alpine version)
+# Go to https://pkgs.alpinelinux.org/package/v3.20/community/x86_64/chromium (replace with the latest Alpine version)
 # and note the Chromium version available. Then go to https://pptr.dev/chromium-support
 # and find the latest version that supports that Chromium version, and update it in the package.json.
 RUN apk add --no-cache \
-    'chromium=~124' \
+    'chromium=~130' \
     ca-certificates \
     ttf-freefont \
     # App dependencies
@@ -29,7 +28,7 @@ RUN apk add --no-cache \
 ########
 # BUILD
 ########
-FROM base as build
+FROM base AS build
 
 # Copy all source files
 COPY package*.json tsconfig.json ./
@@ -45,7 +44,7 @@ RUN npm run build
 ########
 # DEPLOY
 ########
-FROM deps as deploy
+FROM deps AS deploy
 
 # Copy package.json for version number
 COPY package*.json ./
@@ -63,7 +62,7 @@ ARG COMMIT_SHA="" \
     BRANCH=""
 
 # Put COMMIT_SHA in a file, since Docker managers like Portainer will not use updated ENVs
-RUN echo $COMMIT_SHA > commit-sha.txt
+RUN echo $COMMIT_SHA > commit-sha.txt && echo $BRANCH > branch.txt
 
 LABEL org.opencontainers.image.title="epicgames-freegames-node" \ 
     org.opencontainers.image.url="https://github.com/claabs/epicgames-freegames-node" \
